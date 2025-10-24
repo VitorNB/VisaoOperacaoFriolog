@@ -113,7 +113,7 @@ const applyEtlLogic = (rawData) => {
                 remetente: carga.remetente || 'N/A',
                 consignatario: carga.consignatario || 'N/A', 
                 emissaoCTE: parseDataApi(carga.emissaoCTE),
-                dataRomaneio: parseDataApi(dataRomaneioStr),
+                dataRomaneio: parseDataApi(carga.dataRomaneio),
                 numeroRomaneio: carga.numeroRomaneio || '',
                 motoristaRomaneio: carga.motoristaRomaneio || 'Sem Motorista',
                 placa: carga.placa || '',
@@ -136,8 +136,9 @@ const FriologBI = () => {
     const [cargas, setCargas] = useState([]);
     const [loading, setLoading] = useState(false);
     const [filters, setFilters] = useState({
-        emissaoCteInicio: '2025-01-01', 
-        emissaoCtefim: new Date().toISOString().split('T')[0],
+        // Valores de filtro de data vazios inicialmente, pois a API carrega apenas o dia
+        emissaoCteInicio: '', 
+        emissaoCtefim: '',
         dataRomaneioInicio: '',
         dataRomaneioFim: '',
         motorista: 'Todos',
@@ -155,7 +156,7 @@ const FriologBI = () => {
     const [itemsPerPage] = useState(25); 
 
     
-    // --- Funções de Carregamento (Usando a API real via Proxy) ---
+    // --- Funções de Carregamento (Busca apenas o dia atual - SYSDASTE) ---
     useEffect(() => { loadData(); }, []);
 
     const loadData = async () => {
@@ -166,25 +167,22 @@ const FriologBI = () => {
             console.log("Requisitando Token...");
             const tokenResponse = await fetch(API_CONFIG.URL_TOKEN, { headers: API_CONFIG.HEADERS_TOKEN });
             
-            // 🚨 LOG COMPLETO DA RESPOSTA PARA DEBUG DE 404/TOKEN AUSENTE
             const responseData = await tokenResponse.json();
             console.log("Resposta da API de Token:", responseData); 
 
             if (!tokenResponse.ok) {
-                // Lança erro para 4xx/5xx, incluindo mensagem da API se disponível
                 throw new Error(`Erro ao obter token: ${tokenResponse.status}. Mensagem: ${responseData.mensagem || responseData.Message || 'N/A'}`);
             }
             
             const token = responseData.token;
 
             if (!token) {
-                 // Lança erro se o campo 'token' estiver ausente ou vazio
                  throw new Error("Token não recebido na resposta. Verifique 'Resposta da API de Token' no console para a mensagem de erro da API.");
             }
             
             console.log("Token obtido com sucesso.");
 
-            // 2. Preparar Datas (DDMMYYYY)
+            // 2. Preparar Datas (DDMMYYYY) - BUSCA APENAS O DIA ATUAL (SYSDASTE)
             const today = new Date();
             
             const formatApiDate = (date) => {
@@ -194,9 +192,9 @@ const FriologBI = () => {
                 return `${d}${m}${y}`;
             };
             
-            // Busca desde 01/01/2025 para garantir dados
-            const param1 = "01012025"; 
-            const param2 = formatApiDate(today);
+            const todayFormatted = formatApiDate(today);
+            const param1 = todayFormatted; // Início: dia atual
+            const param2 = todayFormatted; // Fim: dia atual
             
             // 3. Obter Dados de Cargas
             console.log(`Requisitando cargas de ${param1} a ${param2}...`);
@@ -229,7 +227,7 @@ const FriologBI = () => {
         }
     };
 
-    // --- Lógica de Filtros e Stats (Atualizada) ---
+    // --- Lógica de Filtros e Stats ---
     
     const getFilteredData = () => { 
         return cargas.filter(carga => {
@@ -259,7 +257,7 @@ const FriologBI = () => {
         return ['Todos', ...new Set(cargas.map(c => c[field]).filter(Boolean))];
     };
     
-    // NOVO: Lógica de Stats com os novos KPIs
+    // Lógica de Stats com os novos KPIs
     const stats = useMemo(() => {
         // Definição de Status para lógica
         const STATUS_RETORNO_CD = 'Retornando para o CD';
@@ -316,7 +314,7 @@ const FriologBI = () => {
         };
     }, [filteredData]);
     
-    // --- Lógica de Paginação e Exportação (Não Alterada) ---
+    // --- Lógica de Paginação e Exportação ---
     
     const exportToCSV = () => { console.log("Exportando CSV..."); /* Lógica de exportação */ };
     const indexOfLastItem = currentPage * itemsPerPage;
@@ -363,14 +361,14 @@ const FriologBI = () => {
                 <div className="flex justify-between items-end mb-8">
                     <h2 className="text-3xl font-bold text-slate-800">Visão Geral da Operação</h2>
                     <span className="text-sm text-slate-500">
-                        Última Ocorrência: {loading ? 'Atualizando...' : (lastUpdate ? lastUpdate.toLocaleString('pt-BR') : 'Sem dados')}
+                        Última Ocorrência: {loading ? 'Atualizando... Buscando dados de hoje' : (lastUpdate ? lastUpdate.toLocaleString('pt-BR') : 'Sem dados')}
                     </span>
                 </div>
 
                 {/* Stats Cards - PRIMEIRA LINHA */}
                 <div className="grid grid-cols-4 gap-8 mb-10">
                     <StatCard 
-                        title="Total de Notas" 
+                        title="Total de Notas (Hoje)" 
                         value={stats.total} 
                         icon={Package} 
                         colorClass="text-blue-600"
@@ -399,12 +397,7 @@ const FriologBI = () => {
                     />
                 </div>
 
-                {/* Título da Segunda Linha de Stats */}
-                <div className="flex justify-start items-end mb-8 mt-12 border-t border-gray-100 pt-8">
-                    <h2 className="text-2xl font-bold text-slate-800">Métricas de Retorno e Devolução</h2>
-                </div>
-
-                {/* Stats Cards - SEGUNDA LINHA (Nova Sequência) */}
+                {/* Stats Cards - SEGUNDA LINHA (Nova Sequência) - SEM TÍTULO ADICIONAL */}
                 <div className="grid grid-cols-4 gap-8 mb-10">
                     <StatCard 
                         title="Reentrega Comercial (005)" 
