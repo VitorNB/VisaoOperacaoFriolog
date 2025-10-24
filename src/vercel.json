@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/token",
+      "destination": "http://gwfiscal.gwcloud.com.br/webresources/v2/servicosGW/solicitarToken/"
+    },
+    {
+      "source": "/api/cargas",
+      "destination": "http://gwfiscal.gwcloud.com.br/webresources/v2/servicosGW/listarCargas/"
+    }
+  ]
+}

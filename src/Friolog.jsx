@@ -8,7 +8,7 @@ const API_CONFIG = {
         "Senha": "49576466000129",
         "GUID": "61dc471a-5d47-4459-9bd6-10e242be135e"
     },
-    URL_CARGAS: "http://gwfiscal.gwcloud.com.br/webresources/v2/servicosGW/listarCargas/"
+    URL_CARGAS: "/api/cargas" // ALTERAÇÃO: Usar o caminho do proxy
 };
 
 // --- Funções de Transformação (Baseadas na lógica Python) ---
