@@ -3,6 +3,7 @@ import { Filter, Download, RefreshCw, Package, TrendingUp, AlertCircle, CheckCir
 
 // =================================================================
 // CONFIGURAÇÃO DA API: USANDO PROXY RELATIVO /API/GW/
+// Para funcionar no Vercel (com o vercel.json) e no Local (com o vite.config.js)
 // =================================================================
 const API_CONFIG = {
     // Rotas relativas sem a barra final
@@ -15,42 +16,7 @@ const API_CONFIG = {
     URL_CARGAS: "/api/gw/v2/servicosGW/listarCargas" 
 };
 
-// --- Funções de Ajuda para Datas e Mapeamento ETL ---
-
-/**
- * Retorna a data de hoje no formato YYYY-MM-DD (para inicializar inputs HTML)
- */
-const getTodayFormattedInput = () => {
-    const today = new Date();
-    const d = today.getDate().toString().padStart(2, '0');
-    const m = (today.getMonth() + 1).toString().padStart(2, '0');
-    const y = today.getFullYear();
-    return `${y}-${m}-${d}`;
-};
-
-/**
- * Converte data de formato YYYY-MM-DD (do input HTML) para DDMMYYYY (para API)
- */
-const apiDateFormat = (dateStr) => {
-    if (!dateStr || dateStr.length !== 10) return '';
-    const [year, month, day] = dateStr.split('-');
-    return `${day}${month}${year}`;
-};
-
-/**
- * Converte data de formato DDMMYYYY[HHMM] para YYYY-MM-DD (para exibição)
- */
-const parseDataApi = (dataStr) => {
-    if (!dataStr || dataStr.length < 8) return '';
-    try {
-        const day = dataStr.substring(0, 2);
-        const month = dataStr.substring(2, 4);
-        const year = dataStr.substring(4, 8);
-        return `${year}-${month}-${day}`;
-    } catch {
-        return '';
-    }
-};
+// --- Funções de Transformação (Baseadas na lógica Python) ---
 
 const ocorrencia_vs_status_bi = {
     "Entregue com Devolução Parcial Logística": "Retornando para o CD",
@@ -84,7 +50,22 @@ const ocorrencia_vs_status_bi = {
 };
 
 /**
- * Aplica a lógica de transformação do script load_silver, limpando strings.
+ * Converte data de formato DDMMYYYY[HHMM] para YYYY-MM-DD
+ */
+const parseDataApi = (dataStr) => {
+    if (!dataStr || dataStr.length < 8) return '';
+    try {
+        const day = dataStr.substring(0, 2);
+        const month = dataStr.substring(2, 4);
+        const year = dataStr.substring(4, 8);
+        return `${year}-${month}-${day}`;
+    } catch {
+        return '';
+    }
+};
+
+/**
+ * Aplica a lógica de transformação do script load_silver.
  */
 const applyEtlLogic = (rawData) => {
     if (!Array.isArray(rawData)) return [];
@@ -125,19 +106,17 @@ const applyEtlLogic = (rawData) => {
                  statusAux = 'Entregue'; 
             }
 
-            // Mapeamento final e NORMALIZAÇÃO DE STRINGS (CORREÇÃO DE FILTROS)
             return {
                 idNota: carga.idNota,
                 notas: carga.notas,
                 cte: carga.cte,
-                // 🚨 APLICA .trim() AQUI PARA GARANTIR COERÊNCIA NOS FILTROS
-                destinatario: (carga.destinatario || 'N/A').trim(),
-                remetente: (carga.remetente || 'N/A').trim(),
-                consignatario: (carga.consignatario || 'N/A').trim(), 
+                destinatario: carga.destinatario || 'N/A',
+                remetente: carga.remetente || 'N/A',
+                consignatario: carga.consignatario || 'N/A', 
                 emissaoCTE: parseDataApi(carga.emissaoCTE),
-                dataRomaneio: parseDataApi(carga.dataRomaneio),
+                dataRomaneio: parseDataApi(dataRomaneioStr),
                 numeroRomaneio: carga.numeroRomaneio || '',
-                motoristaRomaneio: (carga.motoristaRomaneio || 'Sem Motorista').trim(),
+                motoristaRomaneio: carga.motoristaRomaneio || 'Sem Motorista',
                 placa: carga.placa || '',
                 pesoCarga: parseFloat(carga.pesoCarga || 0).toFixed(2),
                 status: carga.status,
@@ -154,16 +133,12 @@ const applyEtlLogic = (rawData) => {
 
 // --- Componente Principal ---
 const FriologBI = () => { 
-    // Data atual para inicialização dos filtros
-    const todayForInput = getTodayFormattedInput();
-
     // Variáveis de Estado
     const [cargas, setCargas] = useState([]);
     const [loading, setLoading] = useState(false);
     const [filters, setFilters] = useState({
-        // Inicializa Emissão CT-e (Início e Fim) com a data atual (sysdate)
-        emissaoCteInicio: todayForInput, 
-        emissaoCtefim: todayForInput,
+        emissaoCteInicio: '2025-01-01', 
+        emissaoCtefim: new Date().toISOString().split('T')[0],
         dataRomaneioInicio: '',
         dataRomaneioFim: '',
         motorista: 'Todos',
@@ -181,47 +156,51 @@ const FriologBI = () => {
     const [itemsPerPage] = useState(25); 
 
     
-    // --- Funções de Carregamento (Busca controlada pelos filtros de data) ---
+    // --- Funções de Carregamento (Usando a API real via Proxy) ---
     useEffect(() => { loadData(); }, []);
 
     const loadData = async () => {
         setLoading(true);
         setCurrentPage(1);
-
-        // 1. Validar e Formatar Datas de Emissão CT-e (para o API Call)
-        // Usa as datas do filtro de input (que controlam a chamada da API)
-        const param1 = apiDateFormat(filters.emissaoCteInicio); 
-        const param2 = apiDateFormat(filters.emissaoCtefim); 
-
-        if (!param1 || !param2 || param1.length !== 8 || param2.length !== 8) {
-            alert("Por favor, preencha as datas de Emissão CT-e (Início e Fim) no formato correto.");
-            setLoading(false);
-            return;
-        }
-
         try {
-            // 2. Obter Token
+            // 1. Obter Token
             console.log("Requisitando Token...");
             const tokenResponse = await fetch(API_CONFIG.URL_TOKEN, { headers: API_CONFIG.HEADERS_TOKEN });
             
+            // 🚨 LOG COMPLETO DA RESPOSTA PARA DEBUG DE 404/TOKEN AUSENTE
             const responseData = await tokenResponse.json();
             console.log("Resposta da API de Token:", responseData); 
 
             if (!tokenResponse.ok) {
+                // Lança erro para 4xx/5xx, incluindo mensagem da API se disponível
                 throw new Error(`Erro ao obter token: ${tokenResponse.status}. Mensagem: ${responseData.mensagem || responseData.Message || 'N/A'}`);
             }
             
             const token = responseData.token;
 
             if (!token) {
+                 // Lança erro se o campo 'token' estiver ausente ou vazio
                  throw new Error("Token não recebido na resposta. Verifique 'Resposta da API de Token' no console para a mensagem de erro da API.");
             }
             
             console.log("Token obtido com sucesso.");
+
+            // 2. Preparar Datas (DDMMYYYY)
+            const today = new Date();
+            
+            const formatApiDate = (date) => {
+                const d = date.getDate().toString().padStart(2, '0');
+                const m = (date.getMonth() + 1).toString().padStart(2, '0');
+                const y = date.getFullYear();
+                return `${d}${m}${y}`;
+            };
+            
+            // Busca desde 01/01/2025 para garantir dados
+            const param1 = "01012025"; 
+            const param2 = formatApiDate(today);
             
             // 3. Obter Dados de Cargas
             console.log(`Requisitando cargas de ${param1} a ${param2}...`);
-            // Os parâmetros 1 e 2 são as datas formatadas dos inputs
             const bodyCargas = { tipo: 1, parametro1: param1, parametro2: param2 };
             const headersCargas = { "token": token, "Content-Type": "application/json" };
             
@@ -251,27 +230,18 @@ const FriologBI = () => {
         }
     };
 
-    // --- Lógica de Filtros e Stats ---
+    // --- Lógica de Filtros, Stats e JSX (Não Alterada) ---
     
     const getFilteredData = () => { 
         return cargas.filter(carga => {
-            // 🚨 CORREÇÃO DE FILTROS: Garante que o valor da Carga é limpo antes da comparação
-            const motoristaCarga = (carga.motoristaRomaneio || 'Sem Motorista').trim();
-            const remetenteCarga = (carga.remetente || 'N/A').trim();
-            const clienteCarga = (carga.destinatario || 'N/A').trim();
-            const consignatarioCarga = (carga.consignatario || 'N/A').trim();
-
             if (filters.emissaoCteInicio && carga.emissaoCTE < filters.emissaoCteInicio) return false;
             if (filters.emissaoCtefim && carga.emissaoCTE > filters.emissaoCtefim) return false;
             if (filters.dataRomaneioInicio && carga.dataRomaneio && carga.dataRomaneio < filters.dataRomaneioInicio) return false;
             if (filters.dataRomaneioFim && carga.dataRomaneio && carga.dataRomaneio > filters.dataRomaneioFim) return false;
-            
-            // Compara o valor limpo da carga com o valor do filtro
-            if (filters.motorista !== 'Todos' && motoristaCarga !== filters.motorista) return false;
-            if (filters.remetente !== 'Todos' && remetenteCarga !== filters.remetente) return false;
-            if (filters.cliente !== 'Todos' && clienteCarga !== filters.cliente) return false;
-            if (filters.consignatario !== 'Todos' && consignatarioCarga !== filters.consignatario) return false; 
-            
+            if (filters.motorista !== 'Todos' && carga.motoristaRomaneio !== filters.motorista) return false;
+            if (filters.remetente !== 'Todos' && carga.remetente !== filters.remetente) return false;
+            if (filters.cliente !== 'Todos' && carga.destinatario !== filters.cliente) return false;
+            if (filters.consignatario !== 'Todos' && carga.consignatario !== filters.consignatario) return false; 
             if (filters.statusBi !== 'Todos' && carga.status_aux !== filters.statusBi) return false;
             if (filters.notas && !carga.notas.includes(filters.notas)) return false;
             if (filters.temRomaneio === 'SIM' && !carga.numeroRomaneio) return false;
@@ -286,61 +256,16 @@ const FriologBI = () => {
         return getFilteredData();
     }, [cargas, filters]);
 
-    // Esta função se beneficia da limpeza em applyEtlLogic
     const getUniqueValues = (field) => {
         return ['Todos', ...new Set(cargas.map(c => c[field]).filter(Boolean))];
     };
     
-    // Lógica de Stats com os novos KPIs
-    const stats = useMemo(() => {
-        const STATUS_RETORNO_CD = 'Retornando para o CD';
-        const STATUS_DEPOSITO_ORIGEM = 'Depósito Origem';
-        const STATUS_ENTREGUE = 'Entregue';
-        const STATUS_EM_ROTA = 'Em Rota Para Entrega';
-
-        const totalNotas = filteredData.length;
-        const totalEntregues = filteredData.filter(c => c.status_aux === STATUS_ENTREGUE).length;
-        const totalEmRota = filteredData.filter(c => c.status_aux === STATUS_EM_ROTA).length;
-        const totalPeso = filteredData.reduce((sum, c) => sum + parseFloat(c.pesoCarga || 0), 0).toFixed(2);
-        
-        const notasRetornoDevolucao = filteredData.filter(c => 
-            c.status_aux === STATUS_RETORNO_CD || c.status_aux === STATUS_DEPOSITO_ORIGEM
-        );
-        
-        const reentregaComercial = notasRetornoDevolucao.filter(c => 
-            (c.descricaoUltimaOcorrencia.includes('Reentrega') || c.descricaoUltimaOcorrencia.includes('REENTREGA')) &&
-            (c.descricaoUltimaOcorrencia.includes('Comercial') || c.descricaoUltimaOcorrencia.includes('COMERCIAL'))
-        ).length;
-        
-        const reentregaLogistica = notasRetornoDevolucao.filter(c => 
-            (c.descricaoUltimaOcorrencia.includes('Reentrega') || c.descricaoUltimaOcorrencia.includes('REENTREGA')) &&
-            (c.descricaoUltimaOcorrencia.includes('Logística') || c.descricaoUltimaOcorrencia.includes('LOGISTICA'))
-        ).length;
-
-        const totalDevolucao = notasRetornoDevolucao.filter(c => 
-            (c.descricaoUltimaOcorrencia.includes('Devolução') || c.descricaoUltimaOcorrencia.includes('DEVOLUÇÃO'))
-        ).length;
-        
-        const notasComStatusAtingivel = totalEntregues + totalEmRota;
-
-        const percentualEntregue = notasComStatusAtingivel > 0 
-            ? ((totalEntregues / notasComStatusAtingivel) * 100).toFixed(2) + '%' 
-            : '0.00%';
-
-        return {
-            total: totalNotas,
-            pesoTotal: totalPeso,
-            entregues: totalEntregues,
-            emRota: totalEmRota,
-            
-            reentregaComercial: reentregaComercial,
-            reentregaLogistica: reentregaLogistica,
-            totalDevolucao: totalDevolucao,
-            percentualEntregue: percentualEntregue,
-        };
-    }, [filteredData]);
-    
-    // --- Lógica de Paginação e Exportação ---
+    const stats = useMemo(() => ({
+        total: filteredData.length,
+        pesoTotal: filteredData.reduce((sum, c) => sum + parseFloat(c.pesoCarga || 0), 0).toFixed(2),
+        entregues: filteredData.filter(c => c.status_aux === 'Entregue').length,
+        emRota: filteredData.filter(c => c.status_aux === 'Em Rota Para Entrega').length
+    }), [filteredData]);
     
     const exportToCSV = () => { console.log("Exportando CSV..."); /* Lógica de exportação */ };
     const indexOfLastItem = currentPage * itemsPerPage;
@@ -391,7 +316,7 @@ const FriologBI = () => {
                     </span>
                 </div>
 
-                {/* Stats Cards - PRIMEIRA LINHA */}
+                {/* Stats Cards */}
                 <div className="grid grid-cols-4 gap-8 mb-10">
                     <StatCard 
                         title="Total de Notas" 
@@ -423,38 +348,6 @@ const FriologBI = () => {
                     />
                 </div>
 
-                {/* Stats Cards - SEGUNDA LINHA (Nova Sequência) */}
-                <div className="grid grid-cols-4 gap-8 mb-10">
-                    <StatCard 
-                        title="Reentrega Comercial (005)" 
-                        value={stats.reentregaComercial} 
-                        icon={User} 
-                        colorClass="text-pink-600"
-                        iconBgClass="bg-pink-50"
-                    />
-                    <StatCard 
-                        title="Reentrega Logística (004)" 
-                        value={stats.reentregaLogistica} 
-                        icon={Truck} 
-                        colorClass="text-red-600"
-                        iconBgClass="bg-red-50"
-                    />
-                    <StatCard 
-                        title="Total Devolução (002/003)" 
-                        value={stats.totalDevolucao} 
-                        icon={ChevronLeft} 
-                        colorClass="text-gray-600" 
-                        iconBgClass="bg-gray-50"
-                    />
-                    <StatCard 
-                        title="% de Entregas Feitas" 
-                        value={stats.percentualEntregue} 
-                        icon={TrendingUp} 
-                        colorClass="text-yellow-600" 
-                        iconBgClass="bg-yellow-50"
-                    />
-                </div>
-
                 {/* Filters & Actions Panel */}
                 <div className="bg-white rounded-xl p-8 shadow-2xl mb-10">
                     <div className="flex items-center gap-2 mb-6 border-b border-gray-100 pb-4">
@@ -464,18 +357,17 @@ const FriologBI = () => {
                     
                     {/* Inputs - Linhas e colunas uniformes */}
                     <div className="grid grid-cols-5 gap-6 mb-6">
-                        {/* Linha 1: Datas de API */}
+                        {/* Linha 1 */}
                         <div className="flex flex-col">
-                            <label className="text-xs font-medium text-slate-600 mb-1">Emissão CT-e (Início) - **Controle da API**</label>
+                            <label className="text-xs font-medium text-slate-600 mb-1">Emissão CT-e (Início)</label>
                             <input type="date" value={filters.emissaoCteInicio} onChange={(e) => setFilters({...filters, emissaoCteInicio: e.target.value})} 
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500" />
                         </div>
                         <div className="flex flex-col">
-                            <label className="text-xs font-medium text-slate-600 mb-1">Emissão CT-e (Fim) - **Controle da API**</label>
+                            <label className="text-xs font-medium text-slate-600 mb-1">Emissão CT-e (Fim)</label>
                             <input type="date" value={filters.emissaoCtefim} onChange={(e) => setFilters({...filters, emissaoCtefim: e.target.value})} 
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500" />
                         </div>
-                        {/* Filtros Secundários */}
                         <div className="flex flex-col">
                             <label className="text-xs font-medium text-slate-600 mb-1">Data Romaneio (Início)</label>
                             <input type="date" value={filters.dataRomaneioInicio} onChange={(e) => setFilters({...filters, dataRomaneioInicio: e.target.value})} 
@@ -550,7 +442,7 @@ const FriologBI = () => {
                         
                         {/* Botões Principais */}
                         <button
-                            onClick={loadData} // Chama a API com as datas dos filtros de Emissão CT-e
+                            onClick={loadData}
                             disabled={loading}
                             className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 font-semibold shadow-md"
                         >
@@ -603,7 +495,7 @@ const FriologBI = () => {
                                             <td className="px-4 py-3 text-slate-700 max-w-[150px] truncate">{carga.consignatario}</td> 
                                             <td className="px-4 py-3 text-slate-700 font-medium">{carga.notas}</td>
                                             <td className="px-4 py-3 text-slate-700">{carga.pesoCarga}</td>
-                                            <td className="px-4 py-3 text-slate-700">{carga.descricaoUltimaOcorrência}</td>
+                                            <td className="px-4 py-3 text-slate-700">{carga.descricaoUltimaOcorrencia}</td>
                                             <td className="px-4 py-3">
                                                 <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${
                                                     carga.status_aux === 'Entregue' ? 'bg-green-100 text-green-800' :
