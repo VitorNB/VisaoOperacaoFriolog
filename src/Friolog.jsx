@@ -6,15 +6,15 @@ import { Filter, Download, RefreshCw, Package, TrendingUp, AlertCircle, CheckCir
 // (Requer o arquivo vercel.json e a config de proxy local, ex: vite.config.js)
 // =================================================================
 const API_CONFIG = {
-    // Usando rota de proxy relativa para TOKEN
-    URL_TOKEN: "/api/gw/v2/servicosGW/solicitarToken/", 
+    // Usando rota de proxy relativa SEM a barra final
+    URL_TOKEN: "/api/gw/v2/servicosGW/solicitarToken", 
     HEADERS_TOKEN: {
         "Login": "49576466000129",
         "Senha": "49576466000129",
         "GUID": "61dc471a-5d47-4459-9bd6-10e242be135e"
     },
-    // Usando rota de proxy relativa para CARGAS
-    URL_CARGAS: "/api/gw/v2/servicosGW/listarCargas/"
+    // Usando rota de proxy relativa SEM a barra final
+    URL_CARGAS: "/api/gw/v2/servicosGW/listarCargas" 
 };
 
 // --- Funções de Transformação (Baseadas na lógica Python) ---

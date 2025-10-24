@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/gw/:path*",
-      "destination": "https://gwfiscal.gwcloud.com.br/webresources/:path*"
+      "destination": "http://gwfiscal.gwcloud.com.br/webresources/:path*"
     }
   ]
 }
