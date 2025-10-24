@@ -3,7 +3,6 @@ import { Filter, Download, RefreshCw, Package, TrendingUp, AlertCircle, CheckCir
 
 // =================================================================
 // CONFIGURAÇÃO DA API: USANDO PROXY RELATIVO /API/GW/
-// Para funcionar no Vercel (com o vercel.json) e no Local (com o vite.config.js)
 // =================================================================
 const API_CONFIG = {
     // Rotas relativas sem a barra final
@@ -230,7 +229,7 @@ const FriologBI = () => {
         }
     };
 
-    // --- Lógica de Filtros, Stats e JSX (Não Alterada) ---
+    // --- Lógica de Filtros e Stats (Atualizada) ---
     
     const getFilteredData = () => { 
         return cargas.filter(carga => {
@@ -260,12 +259,64 @@ const FriologBI = () => {
         return ['Todos', ...new Set(cargas.map(c => c[field]).filter(Boolean))];
     };
     
-    const stats = useMemo(() => ({
-        total: filteredData.length,
-        pesoTotal: filteredData.reduce((sum, c) => sum + parseFloat(c.pesoCarga || 0), 0).toFixed(2),
-        entregues: filteredData.filter(c => c.status_aux === 'Entregue').length,
-        emRota: filteredData.filter(c => c.status_aux === 'Em Rota Para Entrega').length
-    }), [filteredData]);
+    // NOVO: Lógica de Stats com os novos KPIs
+    const stats = useMemo(() => {
+        // Definição de Status para lógica
+        const STATUS_RETORNO_CD = 'Retornando para o CD';
+        const STATUS_DEPOSITO_ORIGEM = 'Depósito Origem';
+        const STATUS_ENTREGUE = 'Entregue';
+        const STATUS_EM_ROTA = 'Em Rota Para Entrega';
+
+        // Contagens Base
+        const totalNotas = filteredData.length;
+        const totalEntregues = filteredData.filter(c => c.status_aux === STATUS_ENTREGUE).length;
+        const totalEmRota = filteredData.filter(c => c.status_aux === STATUS_EM_ROTA).length;
+        const totalPeso = filteredData.reduce((sum, c) => sum + parseFloat(c.pesoCarga || 0), 0).toFixed(2);
+        
+        // NOVOS KPIs DE REENTREGA E DEVOLUÇÃO
+        const notasRetornoDevolucao = filteredData.filter(c => 
+            c.status_aux === STATUS_RETORNO_CD || c.status_aux === STATUS_DEPOSITO_ORIGEM
+        );
+        
+        // 1. Reentrega Comercial (Ocorrência 005)
+        const reentregaComercial = notasRetornoDevolucao.filter(c => 
+            (c.descricaoUltimaOcorrencia.includes('Reentrega') || c.descricaoUltimaOcorrencia.includes('REENTREGA')) &&
+            (c.descricaoUltimaOcorrencia.includes('Comercial') || c.descricaoUltimaOcorrencia.includes('COMERCIAL'))
+        ).length;
+        
+        // 2. Reentrega Logística (Ocorrência 004)
+        const reentregaLogistica = notasRetornoDevolucao.filter(c => 
+            (c.descricaoUltimaOcorrencia.includes('Reentrega') || c.descricaoUltimaOcorrencia.includes('REENTREGA')) &&
+            (c.descricaoUltimaOcorrencia.includes('Logística') || c.descricaoUltimaOcorrencia.includes('LOGISTICA'))
+        ).length;
+
+        // 3. Total Devolução (Ocorrências 003 e 002)
+        const totalDevolucao = notasRetornoDevolucao.filter(c => 
+            (c.descricaoUltimaOcorrencia.includes('Devolução') || c.descricaoUltimaOcorrencia.includes('DEVOLUÇÃO'))
+        ).length;
+        
+        // 4. % de entregas feitas: (Total Entregues) / (Total Entregues + Em Rota no momento)
+        const notasComStatusAtingivel = totalEntregues + totalEmRota;
+
+        const percentualEntregue = notasComStatusAtingivel > 0 
+            ? ((totalEntregues / notasComStatusAtingivel) * 100).toFixed(2) + '%' 
+            : '0.00%';
+
+        return {
+            total: totalNotas,
+            pesoTotal: totalPeso,
+            entregues: totalEntregues,
+            emRota: totalEmRota,
+            
+            // Novos KPIs
+            reentregaComercial: reentregaComercial,
+            reentregaLogistica: reentregaLogistica,
+            totalDevolucao: totalDevolucao, // Total de devoluções explícitas
+            percentualEntregue: percentualEntregue, // Novo Percentual
+        };
+    }, [filteredData]);
+    
+    // --- Lógica de Paginação e Exportação (Não Alterada) ---
     
     const exportToCSV = () => { console.log("Exportando CSV..."); /* Lógica de exportação */ };
     const indexOfLastItem = currentPage * itemsPerPage;
@@ -316,7 +367,7 @@ const FriologBI = () => {
                     </span>
                 </div>
 
-                {/* Stats Cards */}
+                {/* Stats Cards - PRIMEIRA LINHA */}
                 <div className="grid grid-cols-4 gap-8 mb-10">
                     <StatCard 
                         title="Total de Notas" 
@@ -345,6 +396,43 @@ const FriologBI = () => {
                         icon={AlertCircle} 
                         colorClass="text-orange-600" 
                         iconBgClass="bg-orange-50"
+                    />
+                </div>
+
+                {/* Título da Segunda Linha de Stats */}
+                <div className="flex justify-start items-end mb-8 mt-12 border-t border-gray-100 pt-8">
+                    <h2 className="text-2xl font-bold text-slate-800">Métricas de Retorno e Devolução</h2>
+                </div>
+
+                {/* Stats Cards - SEGUNDA LINHA (Nova Sequência) */}
+                <div className="grid grid-cols-4 gap-8 mb-10">
+                    <StatCard 
+                        title="Reentrega Comercial (005)" 
+                        value={stats.reentregaComercial} 
+                        icon={User} 
+                        colorClass="text-pink-600"
+                        iconBgClass="bg-pink-50"
+                    />
+                    <StatCard 
+                        title="Reentrega Logística (004)" 
+                        value={stats.reentregaLogistica} 
+                        icon={Truck} 
+                        colorClass="text-red-600"
+                        iconBgClass="bg-red-50"
+                    />
+                    <StatCard 
+                        title="Total Devolução (002/003)" 
+                        value={stats.totalDevolucao} 
+                        icon={ChevronLeft} 
+                        colorClass="text-gray-600" 
+                        iconBgClass="bg-gray-50"
+                    />
+                    <StatCard 
+                        title="% de Entregas Feitas" 
+                        value={stats.percentualEntregue} 
+                        icon={TrendingUp} 
+                        colorClass="text-yellow-600" 
+                        iconBgClass="bg-yellow-50"
                     />
                 </div>
 
