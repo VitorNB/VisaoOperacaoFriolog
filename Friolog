@@ -1,0 +1,499 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { Filter, Download, RefreshCw, Package, TrendingUp, AlertCircle, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+
+const FriologBI = () => {
+  const [cargas, setCargas] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [filters, setFilters] = useState({
+    emissaoCteInicio: '2025-01-01',
+    emissaoCtefim: new Date().toISOString().split('T')[0],
+    dataRomaneioInicio: '',
+    dataRomaneioFim: '',
+    motorista: 'Todos',
+    remetente: 'Todos',
+    cliente: 'Todos',
+    statusBi: 'Todos',
+    notas: '',
+    temRomaneio: 'Todos',
+    // Valor inicial do novo filtro
+    preRomaneio: 'Todos' 
+  });
+  const [lastUpdate, setLastUpdate] = useState(null);
+  
+  // Estados para Paginação
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(20); // Número de itens por página
+
+  // Simulação de dados - em produção, isso viria da API
+  const generateMockData = () => {
+    const remetentes = ['PANORAMA MOVEIS ONLINE LTDA FILIAL SP', 'RIO BRANCO ALIMENTOS S/A', 'ACME CORP'];
+    const clientes = ['NICOLLI VILLAVERDE', 'FLAVIA TATIELLY DOS SANTOS DIAS', 'VANESSA DE PAULA SILVA', 'JULIANA ARCANJO DE CARVALHO DA SILVA'];
+    const motoristas = ['João Silva', 'Maria Santos', 'Pedro Oliveira', 'Sem Motorista'];
+    const statusOptions = ['Entregue', 'Em Rota Para Entrega', 'Depósito Origem', 'Retornando para o CD', 'Anomalia'];
+    const ocorrencias = ['Sem Ocorrência', 'Entregue', 'Em Rota para Entrega', 'Reentrega Logística', 'Devolução Total Comercial'];
+    
+    return Array.from({ length: 50 }, (_, i) => ({
+      idNota: `ID${88546 + i}`,
+      notas: (88546 + i).toString(),
+      cte: `CTE${43220 + i}`,
+      destinatario: clientes[Math.floor(Math.random() * clientes.length)],
+      remetente: remetentes[Math.floor(Math.random() * remetentes.length)],
+      emissaoCTE: new Date(2025, Math.floor(Math.random() * 10), Math.floor(Math.random() * 28) + 1).toISOString().split('T')[0],
+      dataRomaneio: Math.random() > 0.3 ? new Date(2025, 9, Math.floor(Math.random() * 23) + 1).toISOString().split('T')[0] : '',
+      numeroRomaneio: Math.random() > 0.3 ? (43220 + Math.floor(Math.random() * 100)).toString() : '',
+      motoristaRomaneio: motoristas[Math.floor(Math.random() * motoristas.length)],
+      placa: `ABC${Math.floor(Math.random() * 9000) + 1000}`,
+      pesoCarga: (Math.random() * 200 + 30).toFixed(2),
+      status: statusOptions[Math.floor(Math.random() * statusOptions.length)],
+      status_aux: statusOptions[Math.floor(Math.random() * statusOptions.length)],
+      descricaoUltimaOcorrencia: ocorrencias[Math.floor(Math.random() * ocorrencias.length)],
+      dataOcorrencia: new Date(2025, 9, Math.floor(Math.random() * 22) + 1).toISOString().split('T')[0],
+      dataEntrega: Math.random() > 0.5 ? new Date(2025, 9, Math.floor(Math.random() * 22) + 1).toISOString().split('T')[0] : '',
+      cidadeDestinatario: 'São Paulo',
+      // Novo campo simulado para o filtro 'Pré-Romaneio'
+      preRomaneio: Math.random() > 0.6 ? 'SIM' : 'NÃO',
+    }));
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    setCurrentPage(1); // Resetar para a primeira página ao carregar novos dados
+    try {
+      // Simula chamada à API
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const mockData = generateMockData();
+      setCargas(mockData);
+      setLastUpdate(new Date());
+    } catch (error) {
+      console.error('Erro ao carregar dados:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getFilteredData = () => {
+    return cargas.filter(carga => {
+      // Filtro por data de emissão
+      if (filters.emissaoCteInicio && carga.emissaoCTE < filters.emissaoCteInicio) return false;
+      if (filters.emissaoCtefim && carga.emissaoCTE > filters.emissaoCtefim) return false;
+      
+      // Filtro por data de romaneio
+      if (filters.dataRomaneioInicio && carga.dataRomaneio && carga.dataRomaneio < filters.dataRomaneioInicio) return false;
+      if (filters.dataRomaneioFim && carga.dataRomaneio && carga.dataRomaneio > filters.dataRomaneioFim) return false;
+      
+      // Outros filtros
+      if (filters.motorista !== 'Todos' && carga.motoristaRomaneio !== filters.motorista) return false;
+      if (filters.remetente !== 'Todos' && carga.remetente !== filters.remetente) return false;
+      if (filters.cliente !== 'Todos' && carga.destinatario !== filters.cliente) return false;
+      if (filters.statusBi !== 'Todos' && carga.status_aux !== filters.statusBi) return false;
+      if (filters.notas && !carga.notas.includes(filters.notas)) return false;
+      if (filters.temRomaneio === 'SIM' && !carga.numeroRomaneio) return false;
+      if (filters.temRomaneio === 'NÃO' && carga.numeroRomaneio) return false;
+      
+      // NOVO FILTRO: Pré-Romaneio
+      if (filters.preRomaneio !== 'Todos' && carga.preRomaneio !== filters.preRomaneio) return false;
+      
+      return true;
+    });
+  };
+
+  // Usando useMemo para evitar recálculos desnecessários nos filtros
+  const filteredData = useMemo(() => {
+    setCurrentPage(1); // Resetar página sempre que os filtros mudarem
+    return getFilteredData();
+  }, [cargas, filters]);
+
+  const getUniqueValues = (field) => {
+    return ['Todos', ...new Set(cargas.map(c => c[field]).filter(Boolean))];
+  };
+
+  const stats = useMemo(() => ({
+    total: filteredData.length,
+    pesoTotal: filteredData.reduce((sum, c) => sum + parseFloat(c.pesoCarga || 0), 0).toFixed(2),
+    entregues: filteredData.filter(c => c.status === 'Entregue').length,
+    emRota: filteredData.filter(c => c.status_aux === 'Em Rota Para Entrega').length
+  }), [filteredData]);
+
+  const exportToCSV = () => {
+    if (filteredData.length === 0) return;
+    const headers = Object.keys(filteredData[0]).join(';'); // Use ponto e vírgula para CSVs brasileiros
+    const rows = filteredData.map(row => 
+      Object.values(row).map(value => 
+        `"${String(value).replace(/"/g, '""')}"` // Envelopa valores em aspas e escapa aspas internas
+      ).join(';')
+    ).join('\n');
+    
+    const csv = `${headers}\n${rows}`;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `friolog_cargas_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+  
+  // --- Lógica de Paginação ---
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentItems = filteredData.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+
+  const paginate = (pageNumber) => {
+    if (pageNumber > 0 && pageNumber <= totalPages) {
+      setCurrentPage(pageNumber);
+    }
+  };
+  // ---------------------------
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+      {/* Header */}
+      <div className="bg-white shadow-md border-b border-slate-200">
+        <div className="max-w-[1800px] mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="text-3xl font-bold text-blue-600">🚛</div>
+              <div>
+                <h1 className="text-2xl font-bold text-slate-800">Friolog BI</h1>
+                <p className="text-sm text-slate-500">Controle de Entregas API</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              {lastUpdate && (
+                <span className="text-xs text-slate-500">
+                  Última Atualização: {lastUpdate.toLocaleString('pt-BR')}
+                </span>
+              )}
+              <span className="text-2xl font-bold text-blue-600">Notas: {stats.total}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-[1800px] mx-auto px-6 py-6">
+        
+        {/* Stats Cards */}
+        {/* Repetição da exibição do peso total, usei um cartão mais descritivo */}
+        <div className="grid grid-cols-4 gap-4 mb-6">
+          <div className="bg-white rounded-lg shadow-sm p-4 border border-slate-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-600 mb-1">Total de Notas</p>
+                <p className="text-3xl font-bold text-slate-800">{stats.total}</p>
+              </div>
+              <Package className="w-10 h-10 text-blue-500 opacity-20" />
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow-sm p-4 border border-slate-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-600 mb-1">Peso Total (kg)</p>
+                <p className="text-3xl font-bold text-slate-800">{stats.pesoTotal}</p>
+              </div>
+              <TrendingUp className="w-10 h-10 text-indigo-500 opacity-20" />
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow-sm p-4 border border-slate-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-600 mb-1">Entregues</p>
+                <p className="text-3xl font-bold text-green-600">{stats.entregues}</p>
+              </div>
+              <CheckCircle className="w-10 h-10 text-green-500 opacity-20" />
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow-sm p-4 border border-slate-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-600 mb-1">Em Rota</p>
+                <p className="text-3xl font-bold text-orange-600">{stats.emRota}</p>
+              </div>
+              <AlertCircle className="w-10 h-10 text-orange-500 opacity-20" />
+            </div>
+          </div>
+        </div>
+
+        {/* Filters Panel */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6 border border-slate-200">
+          <div className="flex items-center gap-2 mb-4">
+            <Filter className="w-5 h-5 text-slate-600" />
+            <h2 className="text-lg font-semibold text-slate-800">Filtros</h2>
+          </div>
+          
+          <div className="grid grid-cols-5 gap-4 mb-4">
+            {/* Emissão CT-e Início/Fim */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Emissão CT-e (De)</label>
+              <input
+                type="date"
+                value={filters.emissaoCteInicio}
+                onChange={(e) => setFilters({...filters, emissaoCteInicio: e.target.value})}
+                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Emissão CT-e (Até)</label>
+              <input
+                type="date"
+                value={filters.emissaoCtefim}
+                onChange={(e) => setFilters({...filters, emissaoCtefim: e.target.value})}
+                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+              />
+            </div>
+            
+            {/* Data Romaneio Início/Fim */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Romaneio (De)</label>
+              <input
+                type="date"
+                value={filters.dataRomaneioInicio}
+                onChange={(e) => setFilters({...filters, dataRomaneioInicio: e.target.value})}
+                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Romaneio (Até)</label>
+              <input
+                type="date"
+                value={filters.dataRomaneioFim}
+                onChange={(e) => setFilters({...filters, dataRomaneioFim: e.target.value})}
+                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+              />
+            </div>
+            
+            {/* Motorista */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Motorista</label>
+              <select
+                value={filters.motorista}
+                onChange={(e) => setFilters({...filters, motorista: e.target.value})}
+                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+              >
+                {getUniqueValues('motoristaRomaneio').map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-5 gap-4">
+            {/* Remetente */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Remetente</label>
+              <select
+                value={filters.remetente}
+                onChange={(e) => setFilters({...filters, remetente: e.target.value})}
+                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+              >
+                {getUniqueValues('remetente').map(r => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Cliente */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Cliente</label>
+              <select
+                value={filters.cliente}
+                onChange={(e) => setFilters({...filters, cliente: e.target.value})}
+                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+              >
+                {getUniqueValues('destinatario').map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Status BI */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Status BI</label>
+              <select
+                value={filters.statusBi}
+                onChange={(e) => setFilters({...filters, statusBi: e.target.value})}
+                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+              >
+                {getUniqueValues('status_aux').map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Notas */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Notas</label>
+              <input
+                type="text"
+                value={filters.notas}
+                onChange={(e) => setFilters({...filters, notas: e.target.value})}
+                placeholder="Buscar..."
+                className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+              />
+            </div>
+            
+            {/* Tem Romaneio? & Pré-Romaneio */}
+            <div className='flex gap-2'>
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Tem Romaneio?</label>
+                  <select
+                    value={filters.temRomaneio}
+                    onChange={(e) => setFilters({...filters, temRomaneio: e.target.value})}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+                  >
+                    <option value="Todos">Todos</option>
+                    <option value="SIM">SIM</option>
+                    <option value="NÃO">NÃO</option>
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Pré-Romaneio?</label>
+                  <select
+                    value={filters.preRomaneio}
+                    onChange={(e) => setFilters({...filters, preRomaneio: e.target.value})}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+                  >
+                    <option value="Todos">Todos</option>
+                    <option value="SIM">SIM</option>
+                    <option value="NÃO">NÃO</option>
+                  </select>
+                </div>
+            </div>
+          </div>
+
+          <div className="flex gap-3 mt-4">
+            <button
+              onClick={loadData}
+              disabled={loading}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              Atualizar
+            </button>
+            <button
+              onClick={exportToCSV}
+              disabled={filteredData.length === 0}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition disabled:opacity-50"
+            >
+              <Download className="w-4 h-4" />
+              Exportar CSV ({filteredData.length})
+            </button>
+          </div>
+        </div>
+        
+        {/* --- Tabela de Dados --- */}
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Emissão CT-e</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Data Romaneio</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Nº Romaneio</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Remetente</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Notas</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Peso</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Cliente</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Última Ocorrência</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Status BI</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Pré-Romaneio</th> 
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {loading ? (
+                  <tr>
+                    <td colSpan="10" className="px-4 py-8 text-center text-slate-500">
+                      Carregando dados...
+                    </td>
+                  </tr>
+                ) : filteredData.length === 0 ? (
+                  <tr>
+                    <td colSpan="10" className="px-4 py-8 text-center text-slate-500">
+                      Nenhum dado encontrado com os filtros atuais.
+                    </td>
+                  </tr>
+                ) : (
+                  currentItems.map((carga, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50 transition">
+                      <td className="px-4 py-3 text-slate-700">{carga.emissaoCTE}</td>
+                      <td className="px-4 py-3 text-slate-700">{carga.dataRomaneio || '-'}</td>
+                      <td className="px-4 py-3 text-slate-700">{carga.numeroRomaneio || '-'}</td>
+                      <td className="px-4 py-3 text-slate-700 max-w-xs truncate">{carga.remetente}</td>
+                      <td className="px-4 py-3 text-slate-700 font-medium">{carga.notas}</td>
+                      <td className="px-4 py-3 text-slate-700">{carga.pesoCarga}</td>
+                      <td className="px-4 py-3 text-slate-700 max-w-xs truncate">{carga.destinatario}</td>
+                      <td className="px-4 py-3 text-slate-700">{carga.descricaoUltimaOcorrencia}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                          carga.status_aux === 'Entregue' ? 'bg-green-100 text-green-800' :
+                          carga.status_aux === 'Em Rota Para Entrega' ? 'bg-blue-100 text-blue-800' :
+                          carga.status_aux === 'Anomalia' ? 'bg-red-100 text-red-800' :
+                          'bg-slate-100 text-slate-800'
+                        }`}>
+                          {carga.status_aux}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                          carga.preRomaneio === 'SIM' ? 'bg-purple-100 text-purple-800' :
+                          'bg-amber-100 text-amber-800'
+                        }`}>
+                          {carga.preRomaneio}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          
+          {/* Footer e Paginação */}
+          {filteredData.length > 0 && (
+            <div className="bg-slate-50 border-t border-slate-200 px-4 py-3 flex justify-between items-center">
+              {/* Total Peso */}
+              <div className="flex justify-start items-center text-sm font-semibold text-slate-700">
+                <span>Peso total filtrado:</span>
+                <span className="text-blue-600 ml-2">{stats.pesoTotal} kg</span>
+              </div>
+              
+              {/* Controles de Paginação */}
+              <div className='flex items-center gap-4'>
+                <span className='text-sm text-slate-600'>
+                  Página <span className='font-semibold'>{currentPage}</span> de <span className='font-semibold'>{totalPages}</span> ({filteredData.length} registros)
+                </span>
+                <button
+                  onClick={() => paginate(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className='p-2 border border-slate-300 rounded-md bg-white hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed'
+                  aria-label="Página anterior"
+                >
+                  <ChevronLeft className='w-4 h-4' />
+                </button>
+                <button
+                  onClick={() => paginate(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className='p-2 border border-slate-300 rounded-md bg-white hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed'
+                  aria-label="Próxima página"
+                >
+                  <ChevronRight className='w-4 h-4' />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default FriologBI;

@@ -1,0 +1,12 @@
+// postcss.config.js
+
+export default {
+  plugins: {
+    // ESSA SINTAXE REQUER O PACOTE @tailwindcss/postcss
+    '@tailwindcss/postcss': {}, 
+    autoprefixer: {},
+    // NOTA: Se o Tailwind for a única coisa que você precisa além do autoprefixer,
+    // a sintaxe também pode ser: tailwindcss: {}, autoprefixer: {}, 
+    // mas vamos usar a que causou o erro para garantir que funcione
+  },
+}
