@@ -1,20 +1,25 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Filter, Download, RefreshCw, Package, TrendingUp, AlertCircle, CheckCircle, ChevronLeft, ChevronRight, Truck, User } from 'lucide-react';
 
+// =================================================================
+// 🚨 API CONFIGURADA PARA USAR O PROXY RELATIVO /API/GW/
+// (Requer o arquivo vercel.json e a config de proxy local, ex: vite.config.js)
+// =================================================================
 const API_CONFIG = {
-    URL_TOKEN: "http://gwfiscal.gwcloud.com.br/webresources/v2/servicosGW/solicitarToken/",
+    // Usando rota de proxy relativa para TOKEN
+    URL_TOKEN: "/api/gw/v2/servicosGW/solicitarToken/", 
     HEADERS_TOKEN: {
         "Login": "49576466000129",
         "Senha": "49576466000129",
         "GUID": "61dc471a-5d47-4459-9bd6-10e242be135e"
     },
-    URL_CARGAS: "/api/cargas" // ALTERAÇÃO: Usar o caminho do proxy
+    // Usando rota de proxy relativa para CARGAS
+    URL_CARGAS: "/api/gw/v2/servicosGW/listarCargas/"
 };
 
 // --- Funções de Transformação (Baseadas na lógica Python) ---
 
 const ocorrencia_vs_status_bi = {
-    // ... (Mapeamento de ocorrências do seu script load_silver) ...
     "Entregue com Devolução Parcial Logística": "Retornando para o CD",
     "Entregue com Devolução Parcial Comercial": "Retornando para o CD",
     "Entregue com Devolução Parcial": "Retornando para o CD",
@@ -46,7 +51,7 @@ const ocorrencia_vs_status_bi = {
 };
 
 /**
- * Converte data de formato DDMMYYYY[HHMM] para YYYY-MM-DD
+ * Converte data de formato DDMMYYYY[HHMM] para YYYY-MM-DD (compatível com HTML Date input e JS Date comparison)
  * @param {string} dataStr 
  * @returns {string} no formato YYYY-MM-DD
  */
@@ -63,7 +68,7 @@ const parseDataApi = (dataStr) => {
 };
 
 /**
- * Aplica a lógica de transformação do script load_silver.
+ * Aplica a lógica de transformação do script load_silver, criando status_aux, limpando dados e formatando datas.
  * @param {Array<Object>} rawData - Dados brutos da API.
  * @returns {Array<Object>} Dados transformados e limpos.
  */
@@ -77,11 +82,10 @@ const applyEtlLogic = (rawData) => {
             const isCteNormal = carga.remetente !== "RIO BRANCO ALIMENTOS S/A" && carga.tipo === "n";
             return isPifPaf || isCteNormal;
         })
-        // 2. Transformação de campos (Datas e Status BI)
+        // 2. Transformação de campos (Datas, Status BI, Consignatário, etc.)
         .map(carga => {
-            const dataRomaneioStr = carga.dataRomaneio || ''; // Assume que a API retorna em CamelCase
+            const dataRomaneioStr = carga.dataRomaneio || '';
             const dataOcorrenciaStr = carga.dataOcorrencia || '';
-            const horaOcorrenciaStr = carga.horaOcorrencia || '0000';
             let statusAux = carga.status;
 
             // Lógica de Status Auxiliar
@@ -93,15 +97,12 @@ const applyEtlLogic = (rawData) => {
                     statusAux = statusBiValue;
                 }
                 
-                // Lógica de Reentrega/Romaneio (similar ao Python, comparando datas)
+                // Lógica de Reentrega/Romaneio (comparando datas)
                 if (statusAux === 'Retornando para o CD' || statusAux === 'Depósito Origem') {
                     if (dataRomaneioStr.length >= 8 && dataOcorrenciaStr.length >= 8) {
                         try {
-                            // Converte a data de ocorrência para objeto Date
                             const dataOcorrencia = new Date(parseDataApi(dataOcorrenciaStr));
-                            
-                            // Converte a data/hora do romaneio para objeto Date
-                            // Zera a hora do romaneio se só tiver a data (seu script python fez isso)
+                            // Zera a hora do romaneio para comparação apenas pela data (como no Python)
                             const fullRomaneioStr = dataRomaneioStr.substring(0, 8) + '0000'; 
                             const dataRomaneio = new Date(parseDataApi(fullRomaneioStr)); 
 
@@ -115,14 +116,14 @@ const applyEtlLogic = (rawData) => {
                  statusAux = 'Entregue'; // Força 'Entregue' se tiver data de entrega
             }
 
-            // Mapeamento final de campos (limpeza e formatação)
+            // Mapeamento final e formatação de campos
             return {
                 idNota: carga.idNota,
                 notas: carga.notas,
                 cte: carga.cte,
                 destinatario: carga.destinatario || 'N/A',
                 remetente: carga.remetente || 'N/A',
-                consignatario: carga.consignatario || 'N/A', // <-- CAMPO CONSIGNATARIO ADICIONADO AQUI
+                consignatario: carga.consignatario || 'N/A', // CAMPO CONSIGNATARIO
                 emissaoCTE: parseDataApi(carga.emissaoCTE),
                 dataRomaneio: parseDataApi(dataRomaneioStr),
                 numeroRomaneio: carga.numeroRomaneio || '',
@@ -135,6 +136,7 @@ const applyEtlLogic = (rawData) => {
                 dataOcorrencia: parseDataApi(dataOcorrenciaStr),
                 dataEntrega: parseDataApi(carga.dataEntrega),
                 cidadeDestinatario: carga.cidadeDestinatario || 'N/A',
+                // Lógica para Pré-Romaneio:
                 preRomaneio: (carga.dataRomaneio && carga.numeroRomaneio) ? 'SIM' : 'NÃO',
             };
         });
@@ -143,11 +145,12 @@ const applyEtlLogic = (rawData) => {
 
 // --- Componente Principal ---
 const FriologBI = () => { 
-    // ... (useState e variáveis de estado permanecem as mesmas)
+    // Variáveis de Estado
     const [cargas, setCargas] = useState([]);
     const [loading, setLoading] = useState(false);
     const [filters, setFilters] = useState({
-        emissaoCteInicio: '2025-01-01',
+        // 🚨 Recomendação: Manter a data de emissão ampla para testes.
+        emissaoCteInicio: '2025-01-01', 
         emissaoCtefim: new Date().toISOString().split('T')[0],
         dataRomaneioInicio: '',
         dataRomaneioFim: '',
@@ -158,7 +161,7 @@ const FriologBI = () => {
         notas: '',
         temRomaneio: 'Todos',
         preRomaneio: 'Todos',
-        consignatario: 'Todos', // Campo de filtro já existia
+        consignatario: 'Todos',
     });
     const [lastUpdate, setLastUpdate] = useState(null);
     
@@ -166,7 +169,7 @@ const FriologBI = () => {
     const [itemsPerPage] = useState(25); 
 
     
-    // --- Funções de Carregamento (Utilizando a API real) ---
+    // --- Funções de Carregamento (Usando a API real via Proxy) ---
     useEffect(() => { loadData(); }, []);
 
     const loadData = async () => {
@@ -183,9 +186,7 @@ const FriologBI = () => {
 
             // 2. Preparar Datas (DDMMYYYY) para a API
             const today = new Date();
-            const last30Days = new Date(today);
-            last30Days.setDate(today.getDate() - 30);
-
+            
             const formatApiDate = (date) => {
                 const d = date.getDate().toString().padStart(2, '0');
                 const m = (date.getMonth() + 1).toString().padStart(2, '0');
@@ -193,7 +194,8 @@ const FriologBI = () => {
                 return `${d}${m}${y}`;
             };
             
-            const param1 = formatApiDate(last30Days);
+            // 🚨 CORREÇÃO DE DATA: Busca desde 01/01/2025 para garantir dados
+            const param1 = "01012025"; 
             const param2 = formatApiDate(today);
             
             // 3. Obter Dados de Cargas
@@ -221,15 +223,15 @@ const FriologBI = () => {
         } catch (error) {
             console.error('Erro no fluxo de API:', error);
             alert('Houve um erro ao carregar os dados da API. Verifique o console.');
-            setCargas([]); // Limpa dados em caso de falha
+            setCargas([]); 
         } finally {
             setLoading(false);
         }
     };
 
-    // --- Funções Auxiliares e Lógica de Exibição ---
+    // --- Lógica de Filtros e Stats (Não Alterada) ---
     
-    const getFilteredData = () => { /* ... (Filter logic, SEM ALTERAÇÃO) ... */
+    const getFilteredData = () => { 
         return cargas.filter(carga => {
             if (filters.emissaoCteInicio && carga.emissaoCTE < filters.emissaoCteInicio) return false;
             if (filters.emissaoCtefim && carga.emissaoCTE > filters.emissaoCtefim) return false;
@@ -238,7 +240,7 @@ const FriologBI = () => {
             if (filters.motorista !== 'Todos' && carga.motoristaRomaneio !== filters.motorista) return false;
             if (filters.remetente !== 'Todos' && carga.remetente !== filters.remetente) return false;
             if (filters.cliente !== 'Todos' && carga.destinatario !== filters.cliente) return false;
-            if (filters.consignatario !== 'Todos' && carga.consignatario !== filters.consignatario) return false; // Filtro Consignatário
+            if (filters.consignatario !== 'Todos' && carga.consignatario !== filters.consignatario) return false; 
             if (filters.statusBi !== 'Todos' && carga.status_aux !== filters.statusBi) return false;
             if (filters.notas && !carga.notas.includes(filters.notas)) return false;
             if (filters.temRomaneio === 'SIM' && !carga.numeroRomaneio) return false;
@@ -483,13 +485,14 @@ const FriologBI = () => {
                                     <tr><td colSpan="11" className="px-4 py-8 text-center text-slate-500">Nenhum dado encontrado com os filtros atuais.</td></tr>
                                 ) : (
                                     currentItems.map((carga, idx) => (
+                                        // 🚨 REMOVA QUAISQUER ESPAÇOS OU QUEBRAS DE LINHA ANTES DESTE <tr>
                                         <tr key={idx} className="hover:bg-blue-50 transition duration-150">
                                             <td className="px-4 py-3 text-slate-700">{carga.emissaoCTE}</td>
                                             <td className="px-4 py-3 text-slate-700">{carga.dataRomaneio || '-'}</td>
                                             <td className="px-4 py-3 text-slate-700">{carga.numeroRomaneio || '-'}</td>
                                             <td className="px-4 py-3 text-slate-700 max-w-[150px] truncate">{carga.remetente}</td>
                                             <td className="px-4 py-3 text-slate-700 max-w-[150px] truncate">{carga.destinatario}</td>
-                                            <td className="px-4 py-3 text-slate-700 max-w-[150px] truncate">{carga.consignatario}</td> {/* Coluna Consignatário */}
+                                            <td className="px-4 py-3 text-slate-700 max-w-[150px] truncate">{carga.consignatario}</td> 
                                             <td className="px-4 py-3 text-slate-700 font-medium">{carga.notas}</td>
                                             <td className="px-4 py-3 text-slate-700">{carga.pesoCarga}</td>
                                             <td className="px-4 py-3 text-slate-700">{carga.descricaoUltimaOcorrencia}</td>
@@ -507,6 +510,7 @@ const FriologBI = () => {
                                                 }`}>{carga.preRomaneio}</span>
                                             </td>
                                         </tr>
+                                        // 🚨 E APÓS ESTE </tr>
                                     ))
                                 )}
                             </tbody>
