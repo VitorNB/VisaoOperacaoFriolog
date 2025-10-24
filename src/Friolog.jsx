@@ -2,18 +2,17 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Filter, Download, RefreshCw, Package, TrendingUp, AlertCircle, CheckCircle, ChevronLeft, ChevronRight, Truck, User } from 'lucide-react';
 
 // =================================================================
-// 🚨 API CONFIGURADA PARA USAR O PROXY RELATIVO /API/GW/
-// (Requer o arquivo vercel.json e a config de proxy local, ex: vite.config.js)
+// CONFIGURAÇÃO DA API: USANDO PROXY RELATIVO /API/GW/
+// Para funcionar no Vercel (com o vercel.json) e no Local (com o vite.config.js)
 // =================================================================
 const API_CONFIG = {
-    // Usando rota de proxy relativa SEM a barra final
+    // Rotas relativas sem a barra final
     URL_TOKEN: "/api/gw/v2/servicosGW/solicitarToken", 
     HEADERS_TOKEN: {
         "Login": "49576466000129",
         "Senha": "49576466000129",
         "GUID": "61dc471a-5d47-4459-9bd6-10e242be135e"
     },
-    // Usando rota de proxy relativa SEM a barra final
     URL_CARGAS: "/api/gw/v2/servicosGW/listarCargas" 
 };
 
@@ -51,9 +50,7 @@ const ocorrencia_vs_status_bi = {
 };
 
 /**
- * Converte data de formato DDMMYYYY[HHMM] para YYYY-MM-DD (compatível com HTML Date input e JS Date comparison)
- * @param {string} dataStr 
- * @returns {string} no formato YYYY-MM-DD
+ * Converte data de formato DDMMYYYY[HHMM] para YYYY-MM-DD
  */
 const parseDataApi = (dataStr) => {
     if (!dataStr || dataStr.length < 8) return '';
@@ -68,28 +65,23 @@ const parseDataApi = (dataStr) => {
 };
 
 /**
- * Aplica a lógica de transformação do script load_silver, criando status_aux, limpando dados e formatando datas.
- * @param {Array<Object>} rawData - Dados brutos da API.
- * @returns {Array<Object>} Dados transformados e limpos.
+ * Aplica a lógica de transformação do script load_silver.
  */
 const applyEtlLogic = (rawData) => {
     if (!Array.isArray(rawData)) return [];
     
     return rawData
-        // 1. Filtragem (similar ao PifPaf/CTe Normal do seu script)
         .filter(carga => {
             const isPifPaf = carga.remetente === "RIO BRANCO ALIMENTOS S/A" && carga.tipo === "b";
             const isCteNormal = carga.remetente !== "RIO BRANCO ALIMENTOS S/A" && carga.tipo === "n";
             return isPifPaf || isCteNormal;
         })
-        // 2. Transformação de campos (Datas, Status BI, Consignatário, etc.)
         .map(carga => {
             const dataRomaneioStr = carga.dataRomaneio || '';
             const dataOcorrenciaStr = carga.dataOcorrencia || '';
             let statusAux = carga.status;
 
-            // Lógica de Status Auxiliar
-            if (!carga.dataEntrega) { // Se a data de entrega for NULA
+            if (!carga.dataEntrega) { 
                 const ultimaOcorrencia = carga.descricaoUltimaOcorrencia || 'Sem Ocorrência';
                 const statusBiValue = ocorrencia_vs_status_bi[ultimaOcorrencia];
 
@@ -97,33 +89,30 @@ const applyEtlLogic = (rawData) => {
                     statusAux = statusBiValue;
                 }
                 
-                // Lógica de Reentrega/Romaneio (comparando datas)
                 if (statusAux === 'Retornando para o CD' || statusAux === 'Depósito Origem') {
                     if (dataRomaneioStr.length >= 8 && dataOcorrenciaStr.length >= 8) {
                         try {
                             const dataOcorrencia = new Date(parseDataApi(dataOcorrenciaStr));
-                            // Zera a hora do romaneio para comparação apenas pela data (como no Python)
                             const fullRomaneioStr = dataRomaneioStr.substring(0, 8) + '0000'; 
                             const dataRomaneio = new Date(parseDataApi(fullRomaneioStr)); 
 
                             if (dataRomaneio > dataOcorrencia) {
-                                statusAux = carga.status; // Volta ao status original (do GW)
+                                statusAux = carga.status; 
                             }
                         } catch (e) { /* ignore parse error */ }
                     }
                 }
             } else {
-                 statusAux = 'Entregue'; // Força 'Entregue' se tiver data de entrega
+                 statusAux = 'Entregue'; 
             }
 
-            // Mapeamento final e formatação de campos
             return {
                 idNota: carga.idNota,
                 notas: carga.notas,
                 cte: carga.cte,
                 destinatario: carga.destinatario || 'N/A',
                 remetente: carga.remetente || 'N/A',
-                consignatario: carga.consignatario || 'N/A', // CAMPO CONSIGNATARIO
+                consignatario: carga.consignatario || 'N/A', 
                 emissaoCTE: parseDataApi(carga.emissaoCTE),
                 dataRomaneio: parseDataApi(dataRomaneioStr),
                 numeroRomaneio: carga.numeroRomaneio || '',
@@ -133,10 +122,9 @@ const applyEtlLogic = (rawData) => {
                 status: carga.status,
                 status_aux: statusAux,
                 descricaoUltimaOcorrencia: carga.descricaoUltimaOcorrencia || 'Sem Ocorrência',
-                dataOcorrencia: parseDataApi(dataOcorrenciaStr),
+                dataOcorrencia: parseDataApi(carga.dataOcorrencia),
                 dataEntrega: parseDataApi(carga.dataEntrega),
                 cidadeDestinatario: carga.cidadeDestinatario || 'N/A',
-                // Lógica para Pré-Romaneio:
                 preRomaneio: (carga.dataRomaneio && carga.numeroRomaneio) ? 'SIM' : 'NÃO',
             };
         });
@@ -149,7 +137,6 @@ const FriologBI = () => {
     const [cargas, setCargas] = useState([]);
     const [loading, setLoading] = useState(false);
     const [filters, setFilters] = useState({
-        // 🚨 Recomendação: Manter a data de emissão ampla para testes.
         emissaoCteInicio: '2025-01-01', 
         emissaoCtefim: new Date().toISOString().split('T')[0],
         dataRomaneioInicio: '',
@@ -179,12 +166,26 @@ const FriologBI = () => {
             // 1. Obter Token
             console.log("Requisitando Token...");
             const tokenResponse = await fetch(API_CONFIG.URL_TOKEN, { headers: API_CONFIG.HEADERS_TOKEN });
-            if (!tokenResponse.ok) throw new Error(`Erro ao obter token: ${tokenResponse.status}`);
-            const { token } = await tokenResponse.json();
-            if (!token) throw new Error("Token não recebido na resposta.");
+            
+            // 🚨 LOG COMPLETO DA RESPOSTA PARA DEBUG DE 404/TOKEN AUSENTE
+            const responseData = await tokenResponse.json();
+            console.log("Resposta da API de Token:", responseData); 
+
+            if (!tokenResponse.ok) {
+                // Lança erro para 4xx/5xx, incluindo mensagem da API se disponível
+                throw new Error(`Erro ao obter token: ${tokenResponse.status}. Mensagem: ${responseData.mensagem || responseData.Message || 'N/A'}`);
+            }
+            
+            const token = responseData.token;
+
+            if (!token) {
+                 // Lança erro se o campo 'token' estiver ausente ou vazio
+                 throw new Error("Token não recebido na resposta. Verifique 'Resposta da API de Token' no console para a mensagem de erro da API.");
+            }
+            
             console.log("Token obtido com sucesso.");
 
-            // 2. Preparar Datas (DDMMYYYY) para a API
+            // 2. Preparar Datas (DDMMYYYY)
             const today = new Date();
             
             const formatApiDate = (date) => {
@@ -194,7 +195,7 @@ const FriologBI = () => {
                 return `${d}${m}${y}`;
             };
             
-            // 🚨 CORREÇÃO DE DATA: Busca desde 01/01/2025 para garantir dados
+            // Busca desde 01/01/2025 para garantir dados
             const param1 = "01012025"; 
             const param2 = formatApiDate(today);
             
@@ -229,7 +230,7 @@ const FriologBI = () => {
         }
     };
 
-    // --- Lógica de Filtros e Stats (Não Alterada) ---
+    // --- Lógica de Filtros, Stats e JSX (Não Alterada) ---
     
     const getFilteredData = () => { 
         return cargas.filter(carga => {
@@ -485,7 +486,6 @@ const FriologBI = () => {
                                     <tr><td colSpan="11" className="px-4 py-8 text-center text-slate-500">Nenhum dado encontrado com os filtros atuais.</td></tr>
                                 ) : (
                                     currentItems.map((carga, idx) => (
-                                        // 🚨 REMOVA QUAISQUER ESPAÇOS OU QUEBRAS DE LINHA ANTES DESTE <tr>
                                         <tr key={idx} className="hover:bg-blue-50 transition duration-150">
                                             <td className="px-4 py-3 text-slate-700">{carga.emissaoCTE}</td>
                                             <td className="px-4 py-3 text-slate-700">{carga.dataRomaneio || '-'}</td>
@@ -510,7 +510,6 @@ const FriologBI = () => {
                                                 }`}>{carga.preRomaneio}</span>
                                             </td>
                                         </tr>
-                                        // 🚨 E APÓS ESTE </tr>
                                     ))
                                 )}
                             </tbody>
