@@ -3,7 +3,6 @@ import { Filter, Download, RefreshCw, Package, TrendingUp, AlertCircle, CheckCir
 
 // =================================================================
 // CONFIGURAÇÃO DA API: USANDO PROXY RELATIVO /API/GW/
-// Para funcionar no Vercel (com o vercel.json) e no Local (com o vite.config.js)
 // =================================================================
 const API_CONFIG = {
     // Rotas relativas sem a barra final
@@ -16,41 +15,38 @@ const API_CONFIG = {
     URL_CARGAS: "/api/gw/v2/servicosGW/listarCargas" 
 };
 
-// --- Funções de Transformação (Baseadas na lógica Python) ---
+// --- Funções de Ajuda para Datas ---
 
-const ocorrencia_vs_status_bi = {
-    "Entregue com Devolução Parcial Logística": "Retornando para o CD",
-    "Entregue com Devolução Parcial Comercial": "Retornando para o CD",
-    "Entregue com Devolução Parcial": "Retornando para o CD",
-    "Devolução Total Logística": "Retornando para o CD",
-    "Devolução Total Comercial": "Retornando para o CD",
-    "Devolução Total": "Retornando para o CD",
-    "Reentrega Logística": "Retornando para o CD",
-    "REENTREGA LOGISTICA": "Retornando para o CD",
-    "Reentrega Comercial": "Retornando para o CD",
-    "REENTREGA COMERCIAL": "Retornando para o CD",
-    "Devolução Total Logística Recebida": "Depósito Origem",
-    "Devolução Total Comercial Recebida": "Depósito Origem",
-    "Devolução Parcial Logistica Recebida": "Depósito Origem",
-    "Devolução Parcial Comercial Recebida": "Depósito Origem",
-    "Devolução Recebida": "Depósito Origem",
-    "Devolução Logística Devolvido a Indústria": "Devolvido Indústria",
-    "Devolução Comercial Devolvido a Indústria": "Devolvido Indústria",
-    "Devolvido para Industria": "Devolvido Indústria",
-    "Anomalia": "Anomalia",
-    "Débito Realizado Contra Friolog": "Débito Friolog",
-    "NF Refaturada": "Entregue",
-    "Coletado pelo cliente": "Entregue",
-    "Tratativa Administrativa": "Entregue",
-    "Reentrega Logística Recebida": "Depósito Origem",
-    "Reentrega Comercial Recebida": "Depósito Origem",
-    "Reentrega Recebida": "Depósito Origem",
-    "Agendamento": "Depósito Origem",
-    "Em Rota Para Entrega": "Em Rota Para Entrega",
+/**
+ * Retorna a data no formato YYYY-MM-DD para o input.
+ */
+const getDateFormattedInput = (date = new Date()) => {
+    const d = date.getDate().toString().padStart(2, '0');
+    const m = (date.getMonth() + 1).toString().padStart(2, '0');
+    const y = date.getFullYear();
+    return `${y}-${m}-${d}`;
 };
 
 /**
- * Converte data de formato DDMMYYYY[HHMM] para YYYY-MM-DD
+ * Retorna o primeiro dia do mês atual no formato YYYY-MM-DD.
+ */
+const getFirstDayOfMonth = () => {
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+    return getDateFormattedInput(firstDay);
+};
+
+/**
+ * Converte data de formato YYYY-MM-DD (do input HTML) para DDMMYYYY (para API)
+ */
+const apiDateFormat = (dateStr) => {
+    if (!dateStr || dateStr.length !== 10) return '';
+    const [year, month, day] = dateStr.split('-');
+    return `${day}${month}${year}`;
+};
+
+/**
+ * Converte data de formato DDMMYYYY[HHMM] para YYYY-MM-DD (para exibição)
  */
 const parseDataApi = (dataStr) => {
     if (!dataStr || dataStr.length < 8) return '';
@@ -64,8 +60,15 @@ const parseDataApi = (dataStr) => {
     }
 };
 
+// --- Mapeamento ETL e Transformação ---
+
+const ocorrencia_vs_status_bi = {
+    "Entregue com Devolução Parcial Logística": "Retornando para o CD", "Entregue com Devolução Parcial Comercial": "Retornando para o CD", "Entregue com Devolução Parcial": "Retornando para o CD", "Devolução Total Logística": "Retornando para o CD", "Devolução Total Comercial": "Retornando para o CD", "Devolução Total": "Retornando para o CD", "Reentrega Logística": "Retornando para o CD", "REENTREGA LOGISTICA": "Retornando para o CD", "Reentrega Comercial": "Retornando para o CD", "REENTREGA COMERCIAL": "Retornando para o CD", "Devolução Total Logística Recebida": "Depósito Origem", "Devolução Total Comercial Recebida": "Depósito Origem", "Devolução Parcial Logistica Recebida": "Depósito Origem", "Devolução Parcial Comercial Recebida": "Depósito Origem", "Devolução Recebida": "Depósito Origem", "Devolução Logística Devolvido a Indústria": "Devolvido Indústria", "Devolução Comercial Devolvido a Indústria": "Devolvido Indústria",
+    "Devolvido para Industria": "Devolvido Indústria", "Anomalia": "Anomalia", "Débito Realizado Contra Friolog": "Débito Friolog", "NF Refaturada": "Entregue", "Coletado pelo cliente": "Entregue", "Tratativa Administrativa": "Entregue", "Reentrega Logística Recebida": "Depósito Origem", "Reentrega Comercial Recebida": "Depósito Origem", "Reentrega Recebida": "Depósito Origem", "Agendamento": "Depósito Origem", "Em Rota Para Entrega": "Em Rota Para Entrega",
+};
+
 /**
- * Aplica a lógica de transformação do script load_silver.
+ * Aplica a lógica de transformação do script load_silver, limpando strings.
  */
 const applyEtlLogic = (rawData) => {
     if (!Array.isArray(rawData)) return [];
@@ -106,17 +109,18 @@ const applyEtlLogic = (rawData) => {
                  statusAux = 'Entregue'; 
             }
 
+            // Mapeamento final e NORMALIZAÇÃO DE STRINGS (CORREÇÃO DE FILTROS)
             return {
                 idNota: carga.idNota,
                 notas: carga.notas,
                 cte: carga.cte,
-                destinatario: carga.destinatario || 'N/A',
-                remetente: carga.remetente || 'N/A',
-                consignatario: carga.consignatario || 'N/A', 
+                destinatario: (carga.destinatario || 'N/A').trim(),
+                remetente: (carga.remetente || 'N/A').trim(),
+                consignatario: (carga.consignatario || 'N/A').trim(), 
                 emissaoCTE: parseDataApi(carga.emissaoCTE),
-                dataRomaneio: parseDataApi(dataRomaneioStr),
+                dataRomaneio: parseDataApi(carga.dataRomaneio),
                 numeroRomaneio: carga.numeroRomaneio || '',
-                motoristaRomaneio: carga.motoristaRomaneio || 'Sem Motorista',
+                motoristaRomaneio: (carga.motoristaRomaneio || 'Sem Motorista').trim(),
                 placa: carga.placa || '',
                 pesoCarga: parseFloat(carga.pesoCarga || 0).toFixed(2),
                 status: carga.status,
@@ -133,22 +137,22 @@ const applyEtlLogic = (rawData) => {
 
 // --- Componente Principal ---
 const FriologBI = () => { 
+    // Inicialização de datas para o MÊS ATUAL
+    const todayForInput = getDateFormattedInput();
+    const initialDateStart = getFirstDayOfMonth(); // Primeiro dia do mês atual
+
     // Variáveis de Estado
     const [cargas, setCargas] = useState([]);
     const [loading, setLoading] = useState(false);
     const [filters, setFilters] = useState({
-        emissaoCteInicio: '2025-01-01', 
-        emissaoCtefim: new Date().toISOString().split('T')[0],
-        dataRomaneioInicio: '',
-        dataRomaneioFim: '',
-        motorista: 'Todos',
-        remetente: 'Todos',
-        cliente: 'Todos',
-        statusBi: 'Todos',
-        notas: '',
-        temRomaneio: 'Todos',
-        preRomaneio: 'Todos',
-        consignatario: 'Todos',
+        // Datas de Emissão CT-e (Filtros secundários, sem inicialização obrigatória do mês)
+        emissaoCteInicio: '', 
+        emissaoCtefim: '',
+        // DATA ROMANEIO: Inicializa no mês atual e controla a API
+        dataRomaneioInicio: initialDateStart, 
+        dataRomaneioFim: todayForInput,
+        motorista: 'Todos', remetente: 'Todos', cliente: 'Todos', statusBi: 'Todos',
+        notas: '', temRomaneio: 'Todos', preRomaneio: 'Todos', consignatario: 'Todos',
     });
     const [lastUpdate, setLastUpdate] = useState(null);
     
@@ -156,48 +160,47 @@ const FriologBI = () => {
     const [itemsPerPage] = useState(25); 
 
     
-    // --- Funções de Carregamento (Usando a API real via Proxy) ---
+    // --- Funções de Carregamento (Busca controlada pelos filtros de Romaneio) ---
     useEffect(() => { loadData(); }, []);
 
     const loadData = async () => {
         setLoading(true);
         setCurrentPage(1);
+
+        // 1. Validar e Formatar Datas de ROMANEIO (para o API Call)
+        const param1 = apiDateFormat(filters.dataRomaneioInicio); 
+        const param2 = apiDateFormat(filters.dataRomaneioFim); 
+
+        if (!param1 || !param2 || param1.length !== 8 || param2.length !== 8) {
+            alert("Por favor, preencha as datas de Romaneio (Início e Fim) no formato correto (YYYY-MM-DD).");
+            setLoading(false);
+            return;
+        }
+        
+        // 🚨 TIMEOUT CONFIG
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 segundos
+        
+
         try {
-            // 1. Obter Token
+            // 2. Obter Token
             console.log("Requisitando Token...");
             const tokenResponse = await fetch(API_CONFIG.URL_TOKEN, { headers: API_CONFIG.HEADERS_TOKEN });
             
-            // 🚨 LOG COMPLETO DA RESPOSTA PARA DEBUG DE 404/TOKEN AUSENTE
             const responseData = await tokenResponse.json();
             console.log("Resposta da API de Token:", responseData); 
 
             if (!tokenResponse.ok) {
-                // Lança erro para 4xx/5xx, incluindo mensagem da API se disponível
                 throw new Error(`Erro ao obter token: ${tokenResponse.status}. Mensagem: ${responseData.mensagem || responseData.Message || 'N/A'}`);
             }
             
             const token = responseData.token;
 
             if (!token) {
-                 // Lança erro se o campo 'token' estiver ausente ou vazio
                  throw new Error("Token não recebido na resposta. Verifique 'Resposta da API de Token' no console para a mensagem de erro da API.");
             }
             
             console.log("Token obtido com sucesso.");
-
-            // 2. Preparar Datas (DDMMYYYY)
-            const today = new Date();
-            
-            const formatApiDate = (date) => {
-                const d = date.getDate().toString().padStart(2, '0');
-                const m = (date.getMonth() + 1).toString().padStart(2, '0');
-                const y = date.getFullYear();
-                return `${d}${m}${y}`;
-            };
-            
-            // Busca desde 01/01/2025 para garantir dados
-            const param1 = "01012025"; 
-            const param2 = formatApiDate(today);
             
             // 3. Obter Dados de Cargas
             console.log(`Requisitando cargas de ${param1} a ${param2}...`);
@@ -207,8 +210,11 @@ const FriologBI = () => {
             const cargasResponse = await fetch(API_CONFIG.URL_CARGAS, {
                 method: 'POST',
                 headers: headersCargas,
-                body: JSON.stringify(bodyCargas)
+                body: JSON.stringify(bodyCargas),
+                signal: controller.signal // Aplica o timeout
             });
+
+            clearTimeout(timeoutId); // Limpa o timeout se a busca for rápida
 
             if (!cargasResponse.ok) throw new Error(`Erro ao listar cargas: ${cargasResponse.status}`);
             const rawData = await cargasResponse.json();
@@ -222,26 +228,44 @@ const FriologBI = () => {
             setLastUpdate(new Date());
             
         } catch (error) {
-            console.error('Erro no fluxo de API:', error);
-            alert('Houve um erro ao carregar os dados da API. Verifique o console.');
+            if (error.name === 'AbortError') {
+                console.error('Erro no fluxo de API: Tempo esgotado (Timeout de 15s na busca de cargas).');
+                alert('A busca de dados falhou por tempo esgotado. Por favor, tente um período de data menor.');
+            } else {
+                console.error('Erro no fluxo de API:', error);
+                alert('Houve um erro ao carregar os dados da API. Verifique o console.');
+            }
             setCargas([]); 
         } finally {
             setLoading(false);
         }
     };
 
-    // --- Lógica de Filtros, Stats e JSX (Não Alterada) ---
+    // --- Lógica de Filtros e Stats ---
     
     const getFilteredData = () => { 
         return cargas.filter(carga => {
+            // 🚨 CORREÇÃO DE FILTROS: Garante que o valor da Carga é limpo antes da comparação
+            const motoristaCarga = (carga.motoristaRomaneio || 'Sem Motorista').trim();
+            const remetenteCarga = (carga.remetente || 'N/A').trim();
+            const clienteCarga = (carga.destinatario || 'N/A').trim();
+            const consignatarioCarga = (carga.consignatario || 'N/A').trim();
+
+            // Filtros de Emissão CT-e (Filtros secundários aplicados aos dados carregados)
             if (filters.emissaoCteInicio && carga.emissaoCTE < filters.emissaoCteInicio) return false;
             if (filters.emissaoCtefim && carga.emissaoCTE > filters.emissaoCtefim) return false;
+            
+            // Filtros de Data Romaneio (Filtros secundários aplicados aos dados carregados)
             if (filters.dataRomaneioInicio && carga.dataRomaneio && carga.dataRomaneio < filters.dataRomaneioInicio) return false;
             if (filters.dataRomaneioFim && carga.dataRomaneio && carga.dataRomaneio > filters.dataRomaneioFim) return false;
-            if (filters.motorista !== 'Todos' && carga.motoristaRomaneio !== filters.motorista) return false;
-            if (filters.remetente !== 'Todos' && carga.remetente !== filters.remetente) return false;
-            if (filters.cliente !== 'Todos' && carga.destinatario !== filters.cliente) return false;
-            if (filters.consignatario !== 'Todos' && carga.consignatario !== filters.consignatario) return false; 
+            
+            // Filtros de Dropdown (usando valores limpos)
+            if (filters.motorista !== 'Todos' && motoristaCarga !== filters.motorista) return false;
+            if (filters.remetente !== 'Todos' && remetenteCarga !== filters.remetente) return false;
+            if (filters.cliente !== 'Todos' && clienteCarga !== filters.cliente) return false;
+            if (filters.consignatario !== 'Todos' && consignatarioCarga !== filters.consignatario) return false; 
+            
+            // Outros filtros
             if (filters.statusBi !== 'Todos' && carga.status_aux !== filters.statusBi) return false;
             if (filters.notas && !carga.notas.includes(filters.notas)) return false;
             if (filters.temRomaneio === 'SIM' && !carga.numeroRomaneio) return false;
@@ -257,17 +281,114 @@ const FriologBI = () => {
     }, [cargas, filters]);
 
     const getUniqueValues = (field) => {
-        return ['Todos', ...new Set(cargas.map(c => c[field]).filter(Boolean))];
+        return ['Todos', ...new Set(cargas.map(c => (c[field] || 'N/A').trim()).filter(Boolean))];
     };
     
-    const stats = useMemo(() => ({
-        total: filteredData.length,
-        pesoTotal: filteredData.reduce((sum, c) => sum + parseFloat(c.pesoCarga || 0), 0).toFixed(2),
-        entregues: filteredData.filter(c => c.status_aux === 'Entregue').length,
-        emRota: filteredData.filter(c => c.status_aux === 'Em Rota Para Entrega').length
-    }), [filteredData]);
+    // Lógica de Stats com os novos KPIs
+    const stats = useMemo(() => {
+        const STATUS_RETORNO_CD = 'Retornando para o CD';
+        const STATUS_DEPOSITO_ORIGEM = 'Depósito Origem';
+        const STATUS_ENTREGUE = 'Entregue';
+        const STATUS_EM_ROTA = 'Em Rota Para Entrega';
+
+        const totalNotas = filteredData.length;
+        const totalEntregues = filteredData.filter(c => c.status_aux === STATUS_ENTREGUE).length;
+        const totalEmRota = filteredData.filter(c => c.status_aux === STATUS_EM_ROTA).length;
+        const totalPeso = filteredData.reduce((sum, c) => sum + parseFloat(c.pesoCarga || 0), 0).toFixed(2);
+        
+        const notasRetornoDevolucao = filteredData.filter(c => 
+            c.status_aux === STATUS_RETORNO_CD || c.status_aux === STATUS_DEPOSITO_ORIGEM
+        );
+        
+        const reentregaComercial = notasRetornoDevolucao.filter(c => 
+            (c.descricaoUltimaOcorrencia.includes('Reentrega') || c.descricaoUltimaOcorrencia.includes('REENTREGA')) &&
+            (c.descricaoUltimaOcorrencia.includes('Comercial') || c.descricaoUltimaOcorrencia.includes('COMERCIAL'))
+        ).length;
+        
+        const reentregaLogistica = notasRetornoDevolucao.filter(c => 
+            (c.descricaoUltimaOcorrencia.includes('Reentrega') || c.descricaoUltimaOcorrencia.includes('REENTREGA')) &&
+            (c.descricaoUltimaOcorrencia.includes('Logística') || c.descricaoUltimaOcorrencia.includes('LOGISTICA'))
+        ).length;
+
+        const totalDevolucao = notasRetornoDevolucao.filter(c => 
+            (c.descricaoUltimaOcorrencia.includes('Devolução') || c.descricaoUltimaOcorrencia.includes('DEVOLUÇÃO'))
+        ).length;
+
+        const notasNoDeposito = filteredData.filter(c => 
+            c.status_aux === STATUS_DEPOSITO_ORIGEM
+        ).length;
+
+        const notasPendentes = filteredData.filter(c => 
+            c.status_aux !== STATUS_ENTREGUE && 
+            c.status_aux !== STATUS_EM_ROTA &&
+            c.status_aux !== STATUS_RETORNO_CD &&
+            c.status_aux !== STATUS_DEPOSITO_ORIGEM 
+        ).length;
+        
+        // CÁLCULO DO PERCENTUAL DE ENTREGA: (Total Entregues) / (Total Entregues + Em Rota no momento)
+        const notasComStatusAtingivel = totalEntregues + totalEmRota;
+
+        const percentualEntregue = notasComStatusAtingivel > 0 
+            ? ((totalEntregues / notasComStatusAtingivel) * 100).toFixed(2) + '%' 
+            : '0.00%';
+
+        return {
+            total: totalNotas,
+            pesoTotal: totalPeso,
+            entregues: totalEntregues,
+            emRota: totalEmRota,
+            
+            reentregaComercial: reentregaComercial,
+            reentregaLogistica: reentregaLogistica,
+            totalDevolucao: totalDevolucao,
+            notasNoDeposito: notasNoDeposito, 
+            notasPendentes: notasPendentes,
+            percentualEntregue: percentualEntregue,
+        };
+    }, [filteredData]);
     
-    const exportToCSV = () => { console.log("Exportando CSV..."); /* Lógica de exportação */ };
+    // Função de Exportar CSV
+    const exportToCSV = () => {
+        if (filteredData.length === 0) return;
+
+        const headers = [
+            "Emissão CT-e", "Data Romaneio", "Nº Romaneio", "Remetente", "Cliente", "Consignatário", 
+            "Notas", "Peso (kg)", "Última Ocorrência", "Status BI", "Pré-Romaneio"
+        ];
+
+        const rows = filteredData.map(d => [
+            d.emissaoCTE || '',
+            d.dataRomaneio || '',
+            d.numeroRomaneio || '',
+            d.remetente || '',
+            d.destinatario || '',
+            d.consignatario || '',
+            d.notas || '',
+            d.pesoCarga || '0.00',
+            d.descricaoUltimaOcorrência || '',
+            d.status_aux || '',
+            d.preRomaneio || ''
+        ]);
+
+        const csvContent = [
+            headers.join(";"),
+            ...rows.map(e => e.join(";"))
+        ].join("\n");
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `friolog_bi_export_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        console.log("Exportação CSV concluída.");
+    };
+    
+    // --- Lógica de Paginação e JSX ---
+    
     const indexOfLastItem = currentPage * itemsPerPage;
     const indexOfFirstItem = indexOfLastItem - itemsPerPage;
     const currentItems = filteredData.slice(indexOfFirstItem, indexOfLastItem);
@@ -316,7 +437,7 @@ const FriologBI = () => {
                     </span>
                 </div>
 
-                {/* Stats Cards */}
+                {/* Stats Cards - PRIMEIRA LINHA */}
                 <div className="grid grid-cols-4 gap-8 mb-10">
                     <StatCard 
                         title="Total de Notas" 
@@ -348,6 +469,38 @@ const FriologBI = () => {
                     />
                 </div>
 
+                {/* Stats Cards - SEGUNDA LINHA (Nova Sequência) */}
+                <div className="grid grid-cols-4 gap-8 mb-10">
+                    <StatCard 
+                        title="Reentrega Comercial" 
+                        value={stats.reentregaComercial} 
+                        icon={User} 
+                        colorClass="text-pink-600"
+                        iconBgClass="bg-pink-50"
+                    />
+                    <StatCard 
+                        title="Reentrega Logística" 
+                        value={stats.reentregaLogistica} 
+                        icon={Truck} 
+                        colorClass="text-red-600"
+                        iconBgClass="bg-red-50"
+                    />
+                    <StatCard 
+                        title="Notas no Depósito/Origem" 
+                        value={stats.notasNoDeposito} 
+                        icon={Package} 
+                        colorClass="text-cyan-600" 
+                        iconBgClass="bg-cyan-50"
+                    />
+                    <StatCard 
+                        title="% de Entregas Feitas" 
+                        value={stats.percentualEntregue} 
+                        icon={TrendingUp} 
+                        colorClass="text-yellow-600" 
+                        iconBgClass="bg-yellow-50"
+                    />
+                </div>
+
                 {/* Filters & Actions Panel */}
                 <div className="bg-white rounded-xl p-8 shadow-2xl mb-10">
                     <div className="flex items-center gap-2 mb-6 border-b border-gray-100 pb-4">
@@ -357,7 +510,7 @@ const FriologBI = () => {
                     
                     {/* Inputs - Linhas e colunas uniformes */}
                     <div className="grid grid-cols-5 gap-6 mb-6">
-                        {/* Linha 1 */}
+                        {/* Linha 1: Datas de Emissão CT-e */}
                         <div className="flex flex-col">
                             <label className="text-xs font-medium text-slate-600 mb-1">Emissão CT-e (Início)</label>
                             <input type="date" value={filters.emissaoCteInicio} onChange={(e) => setFilters({...filters, emissaoCteInicio: e.target.value})} 
@@ -368,15 +521,16 @@ const FriologBI = () => {
                             <input type="date" value={filters.emissaoCtefim} onChange={(e) => setFilters({...filters, emissaoCtefim: e.target.value})} 
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500" />
                         </div>
+                        {/* Filtros Primários: Data Romaneio */}
                         <div className="flex flex-col">
                             <label className="text-xs font-medium text-slate-600 mb-1">Data Romaneio (Início)</label>
                             <input type="date" value={filters.dataRomaneioInicio} onChange={(e) => setFilters({...filters, dataRomaneioInicio: e.target.value})} 
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500" />
+                                className="w-full px-3 py-2 bg-yellow-50 border border-yellow-500 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500" />
                         </div>
                         <div className="flex flex-col">
                             <label className="text-xs font-medium text-slate-600 mb-1">Data Romaneio (Fim)</label>
                             <input type="date" value={filters.dataRomaneioFim} onChange={(e) => setFilters({...filters, dataRomaneioFim: e.target.value})} 
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500" />
+                                className="w-full px-3 py-2 bg-yellow-50 border border-yellow-500 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500" />
                         </div>
                         <div className="flex flex-col">
                             <label className="text-xs font-medium text-slate-600 mb-1">Motorista</label>
@@ -442,7 +596,7 @@ const FriologBI = () => {
                         
                         {/* Botões Principais */}
                         <button
-                            onClick={loadData}
+                            onClick={loadData} // Chama a API com as datas dos filtros de Romaneio
                             disabled={loading}
                             className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 font-semibold shadow-md"
                         >
@@ -450,7 +604,7 @@ const FriologBI = () => {
                             Atualizar Dados
                         </button>
                         <button
-                            onClick={exportToCSV}
+                            onClick={exportToCSV} // FUNÇÃO EXPORTAR CSV IMPLEMENTADA
                             disabled={filteredData.length === 0}
                             className="flex items-center gap-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50 font-semibold shadow-md"
                         >
@@ -495,7 +649,7 @@ const FriologBI = () => {
                                             <td className="px-4 py-3 text-slate-700 max-w-[150px] truncate">{carga.consignatario}</td> 
                                             <td className="px-4 py-3 text-slate-700 font-medium">{carga.notas}</td>
                                             <td className="px-4 py-3 text-slate-700">{carga.pesoCarga}</td>
-                                            <td className="px-4 py-3 text-slate-700">{carga.descricaoUltimaOcorrencia}</td>
+                                            <td className="px-4 py-3 text-slate-700">{carga.descricaoUltimaOcorrência}</td>
                                             <td className="px-4 py-3">
                                                 <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${
                                                     carga.status_aux === 'Entregue' ? 'bg-green-100 text-green-800' :
@@ -545,7 +699,14 @@ const FriologBI = () => {
                     )}
                 </div>
             </div>
-        </div>
+
+        {/* 🚨 NOVO FOOTER COM ASSINATURA */}
+        <footer className="w-full mt-10 p-4 border-t border-gray-200">
+            <div className="max-w-[1800px] mx-auto px-8 text-center text-xs text-slate-500 font-medium">
+                Criado por <span className="text-blue-600 font-semibold">VITOR NOGUEIRA</span> | {new Date().getFullYear()}
+            </div>
+        </footer>
+    </div>
     );
 };
 
