@@ -1,8 +1,0 @@
-{
-  "rewrites": [
-    {
-      "source": "/api/gw/(.*)",
-      "destination": "http://gwfiscal.gwcloud.com.br/webresources/$1"
-    }
-  ]
-}
