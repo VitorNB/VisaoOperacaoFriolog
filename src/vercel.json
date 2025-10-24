@@ -1,8 +1,8 @@
 {
   "rewrites": [
     {
-      "source": "/api/gw/:path*",
-      "destination": "http://gwfiscal.gwcloud.com.br/webresources/:path*"
+      "source": "/api/gw/(.*)",
+      "destination": "http://gwfiscal.gwcloud.com.br/webresources/$1"
     }
   ]
 }
